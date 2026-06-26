@@ -1,177 +1,252 @@
+```md
 # Engineering Decisions — Stera Episode Studio
 
 ## Overview
-This document explains the key engineering decisions, trade-offs, and design choices made while building the Stera Episode Studio full-stack application. The focus of this project was not feature completeness, but **clarity of architecture, robustness, and engineering judgment under constraints**.
+
+This document explains the key engineering decisions, trade-offs, and system design choices made while building Stera Episode Studio. The focus is on **clear architecture, safe handling of large sensor data, and practical engineering judgment under constraints**, rather than over-engineering for scale.
 
 ---
 
-## 1. Backend Framework Choice — FastAPI
+## 1. Architecture Overview
 
-FastAPI was chosen over Node.js or Flask due to:
+The system follows a simple full-stack pipeline:
 
-- Native async support for handling long-running processing tasks
-- Simple integration with Python-based ML/SDK pipeline
-- Automatic API validation and type hints
-- Lightweight setup suitable for take-home assignments
+```
 
-Trade-off:
-- Less scalable than a full distributed system, but sufficient for local processing workflows.
+Frontend (React + Vite)
+↓
+FastAPI Backend (Python)
+↓
+Background Processing (Threaded Execution)
+↓
+Stera SDK Pipeline (MCAP → Processing → QC)
+↓
+Output Storage (/backend/output)
+↓
+FastAPI Static File Serving (/output)
 
----
+```
 
-## 2. Frontend Choice — React (Vite)
-
-React with Vite was selected because:
-
-- Fast development and hot module replacement
-- Component-based architecture fits dynamic recording cards
-- Easy state handling for process tracking UI
-
-Trade-off:
-- Minimal state management (no Redux) to avoid overengineering
+### Key idea:
+Keep the system **linear, debuggable, and locally reproducible**, avoiding distributed complexity.
 
 ---
 
-## 3. Processing Architecture — Synchronous Backend Execution
+## 2. Core Design Decisions (and Rejected Alternatives)
 
-The SDK pipeline runs synchronously inside the FastAPI endpoint.
+### 2.1 Backend Choice — FastAPI
 
-Reasoning:
-- SDK is not guaranteed to be async-safe
-- Keeps implementation simple and deterministic for evaluation
-- Avoids complexity of task queues (Celery, Redis)
+**Chosen because:**
+- Native Python integration with ML SDK
+- Simple async + sync hybrid support
+- Lightweight and fast to iterate
 
-Trade-off:
-- Blocking behavior during processing
-- Not suitable for production scale workloads
-
----
-
-## 4. Progress Tracking — Polling (not WebSockets)
-
-Polling was chosen instead of WebSockets because:
-
-- Simplicity and reliability for take-home scope
-- Avoids maintaining persistent connections
-- Easier debugging and deterministic behavior
-
-Trade-off:
-- Slight delay in UI updates vs real-time streaming
+**Rejected alternatives:**
+- Flask → Too minimal, required more manual structure
+- Node.js → Poor fit for ML-heavy Python SDK pipeline
 
 ---
 
-## 5. Data Storage — SQLite (or minimal persistence approach)
+### 2.2 Frontend — React (Vite)
 
-SQLite was used for simplicity:
+**Chosen because:**
+- Fast iteration speed
+- Component-based UI fits recording cards + process states
+- Simple state management with hooks
 
-- Lightweight and file-based
-- No external dependencies
-- Sufficient for storing processing state and metadata
-
-Trade-off:
-- Not suitable for concurrent distributed writes at scale
-
----
-
-## 6. Handling of `.mcap` Files
-
-`.mcap` files are never loaded in the frontend.
-
-They are:
-
-- Processed entirely on backend via SDK
-- Streamed internally by MCAPReader
-- Kept out of memory-heavy frontend operations
-
-Reasoning:
-- Prevents browser overload
-- Maintains privacy and performance boundaries
+**Rejected alternatives:**
+- Redux → Overkill for this scope
+- Next.js → Unnecessary SSR complexity
 
 ---
 
-## 7. Privacy and PII Handling
+### 2.3 Processing Model — Synchronous SDK Execution in Background Thread
 
-All face blurring happens server-side before export.
+**Chosen approach:**
+- SDK pipeline runs in a background thread inside FastAPI
 
-- Raw frames are never sent to frontend
-- Only processed (blurred) outputs are exposed
+**Why:**
+- SDK is not guaranteed async-safe
+- Keeps execution deterministic
+- Avoids external infrastructure dependencies
 
-This ensures:
-- No exposure of sensitive user data
-- Compliance with expected privacy constraints
+**Rejected alternatives:**
+- Celery + Redis → Too heavy for take-home scope
+- Async event loop processing → Risky with blocking SDK calls
 
 ---
 
-## 8. File Serving Strategy — FastAPI Static Mount
+### 2.4 Progress Tracking — Polling
 
-Processed outputs (video, mesh, thumbnails) are served via:
+**Chosen because:**
+- Simple and reliable
+- No persistent connection management
+- Easy to debug in interview setting
 
+**Rejected:**
+- WebSockets → unnecessary complexity for linear processing flow
+
+---
+
+### 2.5 Data Storage — Lightweight Persistence
+
+**Approach:**
+- Minimal state tracking (cached output directory existence)
+- SQLite-ready design (optional extension)
+
+**Rejected:**
+- Full database schema design → not required for scope
+
+---
+
+### 2.6 File Handling Strategy (.mcap)
+
+**Key rule:**
+- `.mcap` files are NEVER loaded into frontend
+
+**Backend-only processing ensures:**
+- Memory safety
+- Data integrity
+- Separation of concerns
+
+---
+
+### 2.7 Output Handling — Static File Serving
+
+**Approach:**
 - FastAPI `StaticFiles` mounted at `/output`
 
-Reasoning:
-- Simple and direct file access
-- No need for separate storage service
+**Why:**
+- Direct access to processed assets
+- No extra storage layer required
 
-Trade-off:
-- Not optimized for CDN or large-scale streaming
-
----
-
-## 9. Caching Strategy — Prevent Reprocessing
-
-If output directory already exists:
-
-- The backend skips processing
-- Returns cached result metadata
-
-Benefit:
-- Saves computation time
-- Improves responsiveness
+**Rejected:**
+- S3 / external storage → unnecessary for local system
+- Custom file server → redundant complexity
 
 ---
 
-## 10. Error Handling Strategy
+## 3. Data-Grounded Engineering Judgments
 
-- Backend uses HTTP exceptions for controlled failures
-- Frontend captures and displays error messages per recording
+### 3.1 Malformed or Missing Recordings
 
-Trade-off:
-- No global retry system or advanced recovery logic
+**Strategy:**
+- Validate `.mcap` existence before processing
+- Skip or fail fast on invalid directories
 
----
-
-## 11. Why No Job Queue System
-
-A queue system (Celery / Redis) was intentionally avoided because:
-
-- Scope is a take-home assignment
-- SDK execution is sequential and not distributed
-- Simplicity and readability were prioritized
+**Why:**
+- Prevents SDK crashes
+- Keeps pipeline predictable
 
 ---
 
-## 12. Key Design Philosophy
+### 3.2 Large File & Memory Management
 
-The entire system follows:
+**Strategy:**
+- Frame-by-frame processing via SDK iterator
+- No full video buffering in memory
+- Lazy directory scanning
 
-> "Simple, explainable, and debuggable over complex and scalable"
+**Why:**
+- Prevents memory spikes with large recordings
+- Supports arbitrarily large `.mcap` inputs
 
-Focus areas:
-- Clear data flow
-- Minimal abstraction layers
-- Easy-to-review backend logic
-- Transparent SDK integration
+---
+
+### 3.3 PII & Privacy Safety
+
+**Strategy:**
+- Face blurring occurs entirely on backend before export
+- Raw frames are never exposed via API
+
+**Why:**
+- Prevents accidental leakage of sensitive visual data
+- Ensures frontend only receives processed outputs
+
+---
+
+### 3.4 SDK Instability Handling
+
+**Observed risk:**
+- SDK is alpha and may behave inconsistently
+
+**Mitigation:**
+- Fail-fast error propagation
+- No silent error suppression
+- Output validation via file existence checks
+
+---
+
+### 3.5 File Ingestion Strategy
+
+**Strategy:**
+- Only scan metadata + file existence
+- Do NOT parse `.mcap` during listing phase
+
+**Why:**
+- Avoids expensive IO operations
+- Keeps dashboard responsive
+
+---
+
+## 4. AI Tool Usage & Verification
+
+### Where AI tools were used:
+- Boilerplate structure for FastAPI + React integration
+- Debugging Git issues (large file contamination, SSH setup)
+- README and documentation drafting
+- Architectural refinement and trade-off articulation
+
+### How outputs were verified:
+- All AI-generated code was manually reviewed
+- SDK pipeline tested independently using real `.mcap` files
+- Backend endpoints validated via direct API calls
+- Frontend behavior verified through browser dev tools (network + console)
+
+---
+
+## 5. What I Would Do With One More Day
+
+- Add real progress streaming (instead of polling)
+- Improve UI with loading skeletons and transitions
+- Add retry mechanism for failed SDK runs
+- Introduce structured logging for pipeline debugging
+- Add basic test suite for API endpoints
+- Improve type safety across frontend components
+
+---
+
+## 6. What Was Intentionally Cut
+
+- No distributed job queue (Celery/Redis)
+- No authentication system
+- No cloud storage integration
+- No advanced caching layer
+- No real-time WebSockets implementation
+- No production-grade observability stack
+
+**Reason:** Scope was optimized for clarity, not production deployment.
+
+---
+
+## 7. Key Philosophy
+
+> “Prioritize clarity and debuggability over scale and abstraction.”
+
+This project emphasizes:
+- Understandable system design
+- Predictable execution flow
+- Safe handling of large sensor data
+- Minimal but intentional engineering decisions
 
 ---
 
 ## Conclusion
 
-This project prioritizes:
-- Engineering clarity over optimization
-- Practical trade-offs over theoretical scalability
-- Debuggability over abstraction
-
-It demonstrates the ability to:
-- Integrate external SDKs
-- Design a full-stack system
-- Make informed trade-offs under constraints
+Stera Episode Studio demonstrates the ability to:
+- Build a full-stack system from scratch
+- Integrate external ML SDKs safely
+- Handle large sensor data responsibly
+- Make practical engineering trade-offs under constraints
+- Maintain clean and explainable architecture
+```
