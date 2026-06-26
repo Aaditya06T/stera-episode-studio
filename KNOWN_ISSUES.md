@@ -26,7 +26,7 @@ Some `.mcap` files and ML dependencies are large and not optimized for Git or de
 
 Impact:
 - Repository size can be large if not properly ignored
-- Initial push required cleanup of venv and datasets
+- Initial push required cleanup of `venv/` and datasets
 
 Mitigation:
 - `.gitignore` excludes `venv/`, `recordings/`, and outputs
@@ -111,6 +111,21 @@ Errors are handled at endpoint level and displayed in UI.
 
 Impact:
 - No retry mechanism or centralized logging system
+
+---
+
+## 10. Git Workflow Limitation (Submission Constraint)
+
+During development, due to initial environment and dependency issues (large SDK artifacts, venv contamination, and Git authentication/setup problems), the repository could not be incrementally pushed in a clean step-by-step commit flow as originally intended.
+
+Impact:
+- Final commit history is less granular than ideal
+- Some early work appears consolidated rather than incremental
+
+Mitigation:
+- Codebase was still developed incrementally locally with verified step-by-step testing
+- Final repository reflects cleaned and functional state of the system
+- Architecture and decision-making are documented separately in `DECISIONS.md`
 
 ---
 
