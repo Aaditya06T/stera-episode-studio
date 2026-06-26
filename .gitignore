@@ -1,0 +1,11 @@
+venv/
+backend/venv/
+node_modules/
+recordings/
+backend/output/
+output/
+*.mcap
+*.dylib
+__pycache__/
+.env
+.DS_Store
