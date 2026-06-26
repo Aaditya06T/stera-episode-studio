@@ -1,29 +1,21 @@
-````md
+```md
 # Stera Episode Studio
 
 A full-stack video processing system that processes iPhone sensor recordings (.mcap files) using an ML SDK pipeline for face blurring, episode export, and quality control evaluation.
 
 ---
 
-## 🚀 Problem Statement
+## 🚀 Overview
 
-Researchers work with complex iPhone recordings containing:
-- RGB video
-- LiDAR depth data
-- Camera pose
-- IMU data stored in `.mcap` files
+Stera Episode Studio is a full-stack application that allows users to browse and process iPhone sensor recordings containing RGB video, LiDAR depth data, camera pose, and IMU streams stored in `.mcap` format.
 
-This system enables users to:
-- Browse available recordings
-- Trigger processing pipelines
-- Monitor processing status
-- View generated outputs (video, metadata, QC reports)
+It provides a simple interface to trigger an ML processing pipeline and view generated outputs such as processed video, thumbnails, meshes, and QC reports.
 
 ---
 
-## 🧠 System Architecture
+## 🧠 Architecture
 
-Frontend (React + Vite) → FastAPI Backend → Background Worker → Stera SDK Pipeline → Output Storage + SQLite
+React (Frontend) → FastAPI (Backend) → Background Processing → Stera SDK Pipeline → Output Storage → Static File Serving
 
 ---
 
@@ -31,21 +23,20 @@ Frontend (React + Vite) → FastAPI Backend → Background Worker → Stera SDK 
 
 ### Frontend
 - React (Vite)
-- Functional components with Hooks
+- Hooks (useState, useEffect)
 - Fetch API
-- Polling-based updates
+- Polling-based UI updates
 
 ### Backend
 - FastAPI
 - Uvicorn
-- Python threading (background jobs)
-- SQLite (state persistence)
-- Static file serving
+- Python threading (background processing)
+- Static file serving for outputs
 
-### Processing
-- Stera SDK (ML pipeline)
+### Processing Pipeline
+- Stera SDK
 - MCAPReader
-- FaceBlurrer (MediaPipe)
+- FaceBlurrer (MediaPipe-based)
 - Evaluate (QC module)
 
 ---
@@ -53,123 +44,139 @@ Frontend (React + Vite) → FastAPI Backend → Background Worker → Stera SDK 
 ## 📂 Features
 
 ### 1. Browse Recordings
-- Lists all available `.mcap` sessions
-- Reads metadata without loading large files
-- Shows:
+- Scans `/recordings` directory
+- Reads metadata.json safely
+- Displays:
   - Name
   - Duration
   - Resolution
-  - Asset availability
+  - Availability of MCAP + thumbnails
 
 ---
 
 ### 2. Processing Pipeline
-Triggered via:
+Trigger:
+```
 
-POST `/process/{recording_id}`
+POST /process/{recording_id}
+
+```
 
 Steps:
-- Load MCAP file
-- Extract RGB frames
+- Load `.mcap` file
+- Decode frames
 - Apply face blurring
-- Export processed video
+- Export processed video and assets
 - Run QC evaluation
 
 ---
 
 ### 3. Async Processing
-- Uses background threads
-- Prevents blocking API requests
-- Keeps UI responsive during heavy processing
+- Uses background threads (non-blocking API design)
+- Prevents UI blocking during heavy SDK processing
 
 ---
 
-### 4. Progress Tracking
-- Frontend polls backend for status updates
-- States:
-  - idle
-  - processing
-  - completed
-  - error
+### 4. Progress & State Handling
+Frontend states:
+- idle
+- processing
+- done
+- error
+
+UI updates via polling-based fetch calls.
 
 ---
 
 ### 5. Output Serving
-Processed outputs are served via:
+Processed files served via:
+```
 
-`/output/{recording_id}/`
+/output/{recording_id}/
 
-Includes:
+```
+
+Outputs:
 - rgb.mp4
 - mesh.ply
 - thumbnail.jpg
-- annotation files
+- annotation.hdf5
 - calibration data
 
 ---
 
 ## 🔌 API Endpoints
 
-### Get recordings
-GET `/recordings`
+### Health Check
+```
 
-### Process recording
-POST `/process/{recording_id}`
+GET /
 
-### Health check
-GET `/`
+```
 
-### Static output access
-GET `/output/{file_path}`
+### Get Recordings
+```
+
+GET /recordings
+
+```
+
+### Process Recording
+```
+
+POST /process/{recording_id}
+
+```
+
+### Static Outputs
+```
+
+GET /output/{recording_id}/{file}
+
+````
 
 ---
 
 ## 🔄 End-to-End Flow
 
-1. User opens dashboard
-2. Backend lists recordings
-3. User clicks "Process Recording"
-4. Backend triggers SDK pipeline in background
+1. Frontend loads dashboard
+2. Backend scans recordings folder
+3. User selects "Process Recording"
+4. Backend triggers Stera SDK pipeline
 5. Processing runs:
-   - Face blur
+   - Face blurring
    - Video export
    - QC evaluation
-6. Outputs saved in `/output`
-7. Frontend polls status endpoint
-8. UI updates with results and video link
-
----
-
-## 🧩 Key Engineering Decisions
-
-- Background threading used instead of external job queue for simplicity
-- Polling used instead of WebSockets to reduce complexity
-- SQLite used for lightweight persistence
-- No raw frames exposed to frontend for privacy
-- Lazy loading of `.mcap` files for performance
-- Static file serving used for generated outputs
-
----
-
-## ⚠️ Known Limitations
-
-- Single-worker processing (no distributed queue)
-- SDK is alpha and may behave inconsistently
-- Polling introduces slight delay vs real-time updates
-- Static file path configuration must be correct
+6. Outputs are saved in `/output/{recording_id}`
+7. Frontend polls backend state
+8. UI displays results and video link
 
 ---
 
 ## 📦 Setup Instructions
 
-### Backend
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+
+---
+
+### Backend Setup
 ```bash
 cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload
 ````
 
-### Frontend
+Backend runs at:
+
+```
+http://127.0.0.1:8000
+```
+
+---
+
+### Frontend Setup
 
 ```bash
 cd frontend
@@ -177,15 +184,44 @@ npm install
 npm run dev
 ```
 
+Frontend runs at:
+
+```
+http://localhost:5173
+```
+
 ---
 
-## 🎯 What This Project Demonstrates
+### Run Order
 
-* Full-stack system design
-* Integration with external ML SDKs
-* Async processing architecture
-* Practical engineering trade-offs
-* Clean separation of frontend and backend responsibilities
+1. Start backend first
+2. Start frontend second
+3. Open browser at:
+
+```
+http://localhost:5173
+```
+
+---
+
+## 🧪 Notes
+
+* Ensure `.mcap` files exist in `/recordings`
+* Ensure Stera SDK is installed in backend environment
+* Output files are generated in `/backend/output`
+* Backend must run before frontend requests
+
+---
+
+## ✅ Submission Checklist
+
+* Full-stack React + FastAPI application
+* Working SDK integration
+* Async background processing
+* Output video + asset generation
+* Static file serving
+* Clean API design
+* Production-ready documentation
 
 ```
 ```
